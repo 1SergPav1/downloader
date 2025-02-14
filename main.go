@@ -43,9 +43,14 @@ func main() {
 	for _, url := range config.URLs {
 		wg.Add(1) // Увеличиваем счетчик запущенных горутин на 1
 		go downloadFile(url, path, &wg, ch)
-		size += <-ch
 	}
 	wg.Wait() // Ждем когда счетчик открытых горутин обнулится, прежде чем пойти дальше
+
+	close(ch)
+
+	for i := range ch {
+		size += i
+	}
 
 	log.Printf("Общий объем: %d", size)
 }
