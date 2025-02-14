@@ -31,6 +31,8 @@ func main() {
 		log.Fatal("Не удалось открыть config.json")
 	}
 
+	ch := make(chan int64, len(config.URLs)) // Создаем канал с буфером по количеству ссылок в config.json
+
 	path := createFolder()
 	if path == "" {
 		log.Fatal("Не создать директорию для скачивания")
@@ -40,7 +42,8 @@ func main() {
 
 	for _, url := range config.URLs {
 		wg.Add(1) // Увеличиваем счетчик запущенных горутин на 1
-		go downloadFile(url, path, &wg)
+		go downloadFile(url, path, &wg, ch)
+		size += <-ch
 	}
 	wg.Wait() // Ждем когда счетчик открытых горутин обнулится, прежде чем пойти дальше
 
@@ -81,7 +84,7 @@ func getFileName(url string) string {
 }
 
 // Скачивание файла
-func downloadFile(url, folder string, wg *sync.WaitGroup) {
+func downloadFile(url, folder string, wg *sync.WaitGroup, ch chan int64) {
 	defer wg.Done() // По завершении функции счетчик запущенных горутин в wg будет уменьшен на 1 (wg - указатель на WaitGroup для синхронизации горутин).
 
 	fileName := filepath.Join(folder, getFileName(url))
@@ -106,7 +109,9 @@ func downloadFile(url, folder string, wg *sync.WaitGroup) {
 		return
 	}
 
-	mu.Lock() // блокируем доступ к size, чтобы избежать гонки
-	size += wr
-	mu.Unlock()
+	ch <- wr
+
+	// mu.Lock() // блокируем доступ к size, чтобы избежать гонки
+	// size += wr
+	// mu.Unlock()
 }
