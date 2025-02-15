@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -20,10 +19,7 @@ const (
 	configPath = "./config.json"
 )
 
-var (
-	size int64
-	mu   sync.Mutex
-)
+var size int64
 
 func main() {
 	config, err := readConfig(configPath)
@@ -32,26 +28,26 @@ func main() {
 	}
 
 	ch := make(chan int64, len(config.URLs)) // Создаем канал с буфером по количеству ссылок в config.json
+	syncCh := make(chan bool)                // Канал куда мы запишем значение, когда все горутины закончат скачивание.
 
 	path := createFolder()
 	if path == "" {
 		log.Fatal("Не создать директорию для скачивания")
 	}
 
-	var wg sync.WaitGroup
-
 	for _, url := range config.URLs {
-		wg.Add(1) // Увеличиваем счетчик запущенных горутин на 1
-		go downloadFile(url, path, &wg, ch)
-	}
-	wg.Wait() // Ждем когда счетчик открытых горутин обнулится, прежде чем пойти дальше
-
-	close(ch)
-
-	for i := range ch {
-		size += i
+		go downloadFile(url, path, ch)
 	}
 
+	go func() { // Подсчет общего объема скачанных данных выполняется в отдельной горутине, по мере поступления данных в канал ch.
+		for i := 0; i < len(config.URLs); i++ { // При достижении len(config.URLs) значений эта горутина закроет канал ch и запишет занчени в канал syncCh.
+			size += <-ch
+		}
+		close(ch)
+		syncCh <- true
+	}()
+
+	<-syncCh // Горутина main ждет значение в канале syncCh
 	log.Printf("Общий объем: %d", size)
 }
 
@@ -89,9 +85,7 @@ func getFileName(url string) string {
 }
 
 // Скачивание файла
-func downloadFile(url, folder string, wg *sync.WaitGroup, ch chan int64) {
-	defer wg.Done() // По завершении функции счетчик запущенных горутин в wg будет уменьшен на 1 (wg - указатель на WaitGroup для синхронизации горутин).
-
+func downloadFile(url, folder string, ch chan int64) {
 	fileName := filepath.Join(folder, getFileName(url))
 
 	resp, err := http.Get(url)
@@ -115,8 +109,5 @@ func downloadFile(url, folder string, wg *sync.WaitGroup, ch chan int64) {
 	}
 
 	ch <- wr
-
-	// mu.Lock() // блокируем доступ к size, чтобы избежать гонки
-	// size += wr
-	// mu.Unlock()
+	log.Printf("Горутина положила в канал %d", wr)
 }
