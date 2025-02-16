@@ -27,9 +27,7 @@ func main() {
 		log.Fatal("Не удалось открыть config.json")
 	}
 
-	ch := make(chan int64, len(config.URLs)) // Создаем канал с буфером по количеству ссылок в config.json
-	syncCh := make(chan bool)                // Канал куда мы запишем значение, когда все горутины закончат скачивание.
-
+	ch := make(chan int64, len(config.URLs))
 	path := createFolder()
 	if path == "" {
 		log.Fatal("Не создать директорию для скачивания")
@@ -39,15 +37,11 @@ func main() {
 		go downloadFile(url, path, ch)
 	}
 
-	go func() { // Подсчет общего объема скачанных данных выполняется в отдельной горутине, по мере поступления данных в канал ch.
-		for i := 0; i < len(config.URLs); i++ { // При достижении len(config.URLs) значений эта горутина закроет канал ch и запишет занчени в канал syncCh.
-			size += <-ch
-		}
-		close(ch)
-		syncCh <- true
-	}()
+	for i := 0; i < len(config.URLs); i++ {
+		size += <-ch
+	}
 
-	<-syncCh // Горутина main ждет значение в канале syncCh
+	close(ch)
 	log.Printf("Общий объем: %d", size)
 }
 
